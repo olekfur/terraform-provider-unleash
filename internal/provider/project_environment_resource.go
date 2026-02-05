@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	unleash "github.com/Unleash/unleash-server-api-go/client"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -107,9 +108,29 @@ func (r *projectEnvironmentResource) Schema(_ context.Context, _ resource.Schema
 }
 
 func (r *projectEnvironmentResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("projectId"), req, resp)
+	tflog.Debug(ctx, "Preparing to import project environment resource")
 
-	resource.ImportStatePassthroughID(ctx, path.Root("environmentId"), req, resp)
+	// Accept "<project_id>,<environment_name>" (comma), with "/" or ":" also supported
+	parts := strings.FieldsFunc(req.ID, func(r rune) bool {
+		return r == ',' || r == '/' || r == ':'
+	})
+
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		resp.Diagnostics.AddError(
+			"Invalid import ID",
+			"Expected format '<project_id>,<environment_name>'. You can also use '/' or ':' as the separator. Example: 'default,development'",
+		)
+		return
+	}
+
+	// Map to schema attribute names (snake_case)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("project_id"), parts[0])...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("environment_name"), parts[1])...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	tflog.Debug(ctx, "Finished importing project environment resource", map[string]any{"success": true})
 }
 
 func (r *projectEnvironmentResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
